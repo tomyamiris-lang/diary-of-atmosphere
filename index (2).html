@@ -1,0 +1,145 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Дневник атмосферы</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital@0;1&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4efe6;--fg:#1d1b18;--mut:#7a7469;--card:#fffaf0;--ln:#d9d1c2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16140f;--fg:#efe8da;--mut:#9a9283;--card:#201d16;--ln:#38332a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#16140f;--fg:#efe8da;--mut:#9a9283;--card:#201d16;--ln:#38332a;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 Fraunces,Georgia,serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-weight:400;font-style:italic;font-size:30px;margin:0}
+.mono{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--mut)}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+button,.btn{font:inherit;background:var(--fg);color:var(--bg);border:0;border-radius:999px;padding:8px 18px;cursor:pointer}
+button.g{background:none;color:var(--fg);border:1px solid var(--ln)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.fold{background:var(--card);border:1px solid var(--ln);border-radius:14px;overflow:hidden;cursor:pointer}
+.fold img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block}
+.fold div{padding:10px 12px}.fold b{font-weight:400;font-style:italic;font-size:17px;display:block}
+.view{display:grid;grid-template-columns:minmax(0,360px) 1fr;gap:24px;align-items:start}
+@media(max-width:720px){.view{grid-template-columns:1fr}}
+canvas{width:100%;max-width:360px;aspect-ratio:9/16;border-radius:14px;background:#000;display:block}
+.panel{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:16px}
+.panel li{margin:6px 0}
+label{display:block;margin:12px 0 4px;color:var(--mut)}
+input,textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--ln);border-radius:8px;background:var(--bg);color:var(--fg)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.sw{display:inline-block;width:22px;height:22px;border-radius:50%;margin-right:4px;vertical-align:middle;border:1px solid var(--ln)}
+form{max-width:560px}
+</style></head><body><main>
+<header><div><h1>Дневник атмосферы</h1><div class="mono">текст + фото + песня → воспоминание дня</div></div><div><button id="nb">+ Новый день</button></div></header>
+<div id="app"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s),clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),A=$('#app');
+const KW={calm:['спокой','тих','медлен','уют','вечер','какао','разговар','закат','пруд','дожд','чай','гуляли'],warm:['тепл','какао','солнц','обним','друз','девушк','семь','смех','смея','лист','осен','любим'],tense:['срок','сдач','дедлайн','спеш','нерв','ноч','офис','работ','стресс','проект','экзамен','устал'],cold:['холод','зим','снег','одинок','пуст','сер','офис','ноч'],energy:['бег','танц','концерт','быстр','драйв','спорт','праздн','путешеств','купал','громк','вечерин','смея']};
+const NOUN={парк:'парк',какао:'какао',офис:'офис',сдач:'сдача',озер:'озеро',море:'море',пруд:'пруд',друз:'друзья',концерт:'концерт',дожд:'дождь',работ:'работа',кофе:'кофе',лес:'лес',снег:'снег',чай:'чай',кино:'кино',дом:'дом'};
+const TINT={calm:'#aab9a0',warm:'#e0a040',tense:'#33475b',cold:'#5b7390',energy:'#f06a4f'},ACC={monet:'#f7e3b0',kandinsky:'#f2c14e',film:'#f4d8a8'};
+const TAIL={calm:'в тишине',warm:'в тепле',tense:'на нервах',cold:'в холоде',energy:'на бегу'},MN={calm:'спокойствие',warm:'тепло',tense:'напряжение',cold:'холод',energy:'энергия'};
+const ART={monet:'Моне: мягкие мазки и размытие',kandinsky:'Кандинский: геометрия и жёсткие склейки',film:'плёнка: зерно, засветы, тёплая зернистость'};
+// ---------- анализ ----------
+const joinRu=a=>a.length>1?a.slice(0,-1).join(', ')+' и '+a.slice(-1):a[0];
+function textMood(t){const l=t.toLowerCase(),m={};for(const k in KW)m[k]=KW[k].filter(s=>l.includes(s)).length;return m}
+function makeTitle(t,m,dom){const l=t.toLowerCase();
+ const n=Object.keys(NOUN).filter(k=>l.includes(k)).sort((a,b)=>l.indexOf(a)-l.indexOf(b)).map(k=>NOUN[k]);
+ const se=[['осен|лист','Осень'],['зим|снег','Зима'],['лето|летом','Лето'],['весн','Весна']].find(s=>new RegExp(s[0]).test(l));
+ const tm=/ноч|ноч/.test(l)?'Ночь':l.includes('утр')?'Утро':l.includes('вечер')?'Вечер':'День';
+ let r=joinRu([se?se[1]:tm,...n.slice(0,2)]);
+ if(r.split(' ').length<3)r+=' '+TAIL[dom];return r}
+function avg(src){return new Promise(r=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');c.width=c.height=12;const x=c.getContext('2d');x.drawImage(i,0,0,12,12);const d=x.getImageData(0,0,12,12).data;let a=[0,0,0];for(let k=0;k<d.length;k+=4){a[0]+=d[k];a[1]+=d[k+1];a[2]+=d[k+2]}a=a.map(v=>v/144);r([...a,(.3*a[0]+.59*a[1]+.11*a[2])/255])};i.src=src})}
+const hex=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16)),mix=(a,b,w)=>'rgb('+a.map((v,i)=>Math.round(v*(1-w)+b[i]*w)).join(',')+')';
+async function analyze(d){
+ const m=textMood(d.text),cols=[];for(const p of d.photos)cols.push(await avg(p));
+ const ac=[0,1,2].map(i=>cols.reduce((a,c)=>a+c[i],0)/cols.length),lum=cols.reduce((a,c)=>a+c[3],0)/cols.length,s=d.song;
+ const ar=clamp((s.tempo-60)/100*.6+s.energy*.4,0,1);
+ const tension=m.tense*1.2+m.cold*.6+ar*2+(s.minor?.8:0)+(lum<.35?.6:0),soft=m.calm+m.warm*.7+(1-ar)*2;
+ const style=tension>=3?'kandinsky':(soft>=2.6&&ar<.6?'monet':'film');
+ const dom=Object.keys(m).sort((a,b)=>m[b]-m[a])[0];const tint=style==='kandinsky'?TINT.tense:m[dom]?TINT[dom]:TINT.calm;
+ const P={style,ar,dom,m,lum,interval:clamp(6.5-ar*4.5,1.6,6.5),grain:style==='film'?.22:style==='monet'?.07:.14,pal:[mix(ac,hex(tint),.55),tint,ACC[style]],bpm:s.tempo};
+ P.title=d.title||makeTitle(d.text,m,dom);
+ P.why=[`Текст: настроение — ${Object.keys(m).filter(k=>m[k]).sort((a,b)=>m[b]-m[a]).slice(0,3).map(k=>MN[k]).join(', ')||'нейтральное'}.`,
+ `Фото: средняя яркость ${Math.round(lum*100)}%, цвета смешаны с оттенком настроения → палитра (кружки справа).`,
+ `Музыка: ${s.tempo} уд/мин, ${s.minor?'минор':'мажор'}, энергия ${Math.round(s.energy*100)}% → возбуждение ${Math.round(ar*100)}%: кадры меняются каждые ${P.interval.toFixed(1)} с, пульс анимации держит темп песни.`,
+ `Приём: ${ART[style]}. ${style==='kandinsky'?'Высокое напряжение (слова о сроках/ночи + быстрый минор) → резкий ритм без плавных переходов.':style==='monet'?'Низкое возбуждение и тёплые/тихие слова → больше воздуха, плавные переходы.':'Среднее возбуждение → зерно, тёплые засветы, живой ритм.'}`,
+ `Название собрано из ключевых слов записи (3–7 слов).`];
+ return P}
+async function audioInfo(f){const ac=new (window.AudioContext||window.webkitAudioContext)(),b=await ac.decodeAudioData(await f.arrayBuffer());ac.close();
+ const d=b.getChannelData(0),w=Math.floor(b.sampleRate*.02),env=[];let tot=0;
+ for(let i=0;i+w<d.length;i+=w){let s=0;for(let j=0;j<w;j+=4)s+=d[i+j]**2;const r=Math.sqrt(s/(w/4));env.push(r);tot+=r}
+ const on=env.map((v,i)=>Math.max(0,v-(env[i-1]||0)));let best=0,bl=100;
+ for(let bpm=60;bpm<=180;bpm++){const lag=Math.round(3/bpm/.02*1);let c=0;for(let i=lag;i<on.length;i++)c+=on[i]*on[i-lag];c/=Math.sqrt(bpm);if(c>best){best=c;bl=bpm}}
+ return{tempo:bl,energy:clamp(tot/env.length/.2,0,1)}}
+// ---------- рендер ----------
+function seeded(n){let s=n;return()=>(s=(s*16807)%2147483647)/2147483647}
+function Player(cv,d,P,imgs){const x=cv.getContext('2d'),W=cv.width=540,H=cv.height=960,R=seeded(d.date.length*977+d.text.length),pal=P.pal;
+ const st=[...Array(150)].map(()=>({x:R()*W,y:R()*H,r:14+R()*40,a:R()*3,c:pal[Math.floor(R()*3)],o:.06+R()*.14,ph:R()*6}));
+ const sh=[...Array(16)].map(()=>({k:Math.floor(R()*3),x:R()*W,y:R()*H*.75,s:30+R()*130,a:R()*6,c:pal[Math.floor(R()*3)],ph:R()*6}));
+ const F={monet:'blur(3px) saturate(1.25) brightness(1.05)',kandinsky:'grayscale(.7) contrast(1.35)',film:'sepia(.35) contrast(1.05) saturate(.9)'}[P.style];
+ function photo(i,p,al,t){const m=imgs[i],sc=Math.max(W/m.width,H/m.height)*(1+(.04+P.ar*.08)*p);x.save();x.globalAlpha=al;x.filter=F;x.translate(W/2,H/2);x.scale(sc,sc);x.drawImage(m,-m.width/2,-m.height/2);x.restore();x.filter='none'}
+ function wrap(t,mw){const w=t.split(' '),L=[];let c='';for(const k of w){if(x.measureText(c+' '+k).width>mw&&c){L.push(c);c=k}else c=c?c+' '+k:k}L.push(c);return L}
+ return t=>{const n=imgs.length,iv=P.interval,i=Math.floor(t/iv)%n,p=t%iv/iv,fd=P.style==='kandinsky'?0:.2;
+  x.globalCompositeOperation='source-over';x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,W,H);
+  if(fd&&p<fd&&n>1){photo((i+n-1)%n,1,1,t)}photo(i,p,fd&&p<fd&&n>1?p/fd:1,t);
+  x.globalCompositeOperation=P.style==='kandinsky'?'multiply':'soft-light';x.globalAlpha=.65;x.fillStyle=pal[0];x.fillRect(0,0,W,H);x.globalCompositeOperation='source-over';
+  const beat=Math.pow(Math.abs(Math.sin(Math.PI*t*P.bpm/60)),8)*P.ar;
+  if(P.style==='monet'){for(const s of st){x.save();x.translate(s.x+Math.sin(t*.3+s.ph)*8,s.y+Math.cos(t*.25+s.ph)*5);x.rotate(s.a);x.globalAlpha=s.o;x.fillStyle=s.c;x.beginPath();x.ellipse(0,0,s.r*1.8,s.r*.5,0,0,7);x.fill();x.restore()}}
+  if(P.style==='kandinsky'){x.strokeStyle=pal[2];x.lineWidth=2;for(const s of sh){x.save();x.translate(s.x,s.y);x.rotate(s.a+t*(.1+P.ar*.4)*(s.ph>3?1:-1));const z=s.s*(1+beat*.25);x.globalAlpha=.8;x.fillStyle=s.c;x.beginPath();
+    if(s.k===0){x.arc(0,0,z/2,0,7);x.stroke()}else if(s.k===1){x.moveTo(-z,0);x.lineTo(z,0);x.lineWidth=4;x.stroke();x.lineWidth=2}else{x.moveTo(0,-z/2);x.lineTo(z/2,z/2);x.lineTo(-z/2,z/2);x.closePath();x.globalAlpha=.55;x.fill()}x.restore()}
+   x.globalAlpha=.18;x.strokeStyle='#fff';for(let g=0;g<W;g+=90){x.beginPath();x.moveTo(g,0);x.lineTo(g,H);x.stroke()}}
+  if(P.style==='film'){const g=x.createRadialGradient(W*.1,H*.1,0,W*.1,H*.1,W);g.addColorStop(0,pal[2]);g.addColorStop(1,'transparent');x.globalCompositeOperation='screen';x.globalAlpha=.25+.1*Math.sin(t*.8);x.fillStyle=g;x.fillRect(0,0,W,H);x.globalCompositeOperation='source-over'}
+  const v=x.createRadialGradient(W/2,H/2,W*.4,W/2,H/2,H*.7);v.addColorStop(0,'transparent');v.addColorStop(1,'rgba(0,0,0,.45)');x.globalAlpha=1;x.fillStyle=v;x.fillRect(0,0,W,H);
+  x.fillStyle='#fff';x.globalAlpha=beat*.07;x.fillRect(0,0,W,H);x.globalAlpha=P.grain;for(let k=0;k<500;k++){x.fillStyle=Math.random()<.5?'#fff':'#000';x.fillRect(Math.random()*W,Math.random()*H,1.6,1.6)}
+  // постоянный слой: сетка подписи
+  x.globalAlpha=1;const bg=x.createLinearGradient(0,H-330,0,H);bg.addColorStop(0,'transparent');bg.addColorStop(1,'rgba(0,0,0,.7)');x.fillStyle=bg;x.fillRect(0,H-330,W,330);
+  x.fillStyle='#fff';x.font='22px "JetBrains Mono",monospace';x.fillText(d.date.split('-').reverse().join('.'),40,64);x.textAlign='right';x.fillText(P.style==='kandinsky'?'■ ▲ ●':'· · ·',W-40,64);x.textAlign='left';
+  x.fillRect(40,H-250,60,3);const kd=P.style==='kandinsky';x.font='italic 44px Fraunces,Georgia,serif';
+  const T=kd?P.title.toUpperCase():P.title,sh2=T.slice(0,Math.floor(t*14)),L=wrap(T,W-80),cut=sh2.length;let used=0;
+  L.forEach((ln,j)=>{const part=ln.slice(0,Math.max(0,cut-used));used+=ln.length+1;x.fillText(part,40,H-195+j*52)});
+  x.font=(kd?'':'italic ')+'20px '+(kd?'"JetBrains Mono",monospace':'Fraunces,Georgia,serif');x.globalAlpha=clamp(t-3,0,.9);
+  const sig=(d.text.split(/[.!?]/)[0]||'').slice(0,80);wrap(kd?sig.toUpperCase():sig,W-80).slice(0,2).forEach((ln,j)=>x.fillText(ln,40,H-195+L.length*52+10+j*28));x.globalAlpha=1}}
+// ---------- данные ----------
+const load=()=>{try{return JSON.parse(localStorage.getItem('diary_v1')||'[]')}catch(e){return[]}};
+const save=a=>{try{localStorage.setItem('diary_v1',JSON.stringify(a))}catch(e){alert('Память браузера заполнена — удалите старые дни')}};
+function mk(cs,sd,n){const R=seeded(sd),c=document.createElement('canvas');c.width=540;c.height=720;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,540,720);g.addColorStop(0,cs[0]);g.addColorStop(1,cs[1]);x.fillStyle=g;x.fillRect(0,0,540,720);
+ for(let i=0;i<n;i++){x.globalAlpha=.25+R()*.4;x.fillStyle=cs[Math.floor(R()*cs.length)];x.beginPath();x.ellipse(R()*540,R()*720,20+R()*120,20+R()*90,R()*3,0,7);x.fill()}return c.toDataURL('image/jpeg',.8)}
+const DEMO=[
+ {id:'d1',date:'2026-10-18',demo:1,text:'Гуляли по парку, всё в жёлтых листьях, было холодно, но мы пили какао и долго разговаривали.',photos:[mk(['#d98a2b','#f2c46a','#8b4a1c','#c0641e'],1,40),mk(['#e8a84c','#b5541a','#f5d58a'],2,40)],song:{type:'link',url:'',name:'Фрэнк Синатра',tempo:75,minor:false,energy:.3}},
+ {id:'d2',date:'2026-11-05',demo:1,text:'Срочная сдача проекта, ночь в офисе, в наушниках электронная музыка.',photos:[mk(['#1f2a3a','#5a6f87','#aab4c0','#0e141c'],3,30),mk(['#2c3e50','#7f8c9a','#e8553d'],4,30)],song:{type:'link',url:'',name:'Electronic',tempo:128,minor:true,energy:.85}},
+ {id:'d3',date:'2026-08-14',demo:1,text:'Летом поехали на озеро с друзьями, купались, смеялись и слушали громкую музыку.',photos:[mk(['#1ba8c9','#7fe0c4','#f6e27a','#0f6e8c'],5,40),mk(['#37c3b0','#2a8fd0','#fff0a0'],6,40)],song:{type:'link',url:'',name:'Summer pop',tempo:118,minor:false,energy:.8}}];
+const all=()=>[...load(),...DEMO].sort((a,b)=>b.date.localeCompare(a.date));
+const files={};let cur=null;
+// ---------- экраны ----------
+async function archive(){stop();A.innerHTML='<div class="grid" id="g"></div>';const g=$('#g');
+ for(const d of all()){const P=await analyze(d),e=document.createElement('div');e.className='fold';e.innerHTML=`<img src="${d.photos[0]}" alt=""><div><b>${P.title}</b><span class="mono">${d.date} · ${P.style}${d.demo?' · демо':''}</span></div>`;e.onclick=()=>view(d.id);g.append(e)}}
+let raf,aud;function stop(){cancelAnimationFrame(raf);if(aud){aud.pause();aud=null}speechSynthesis.cancel()}
+async function view(id){stop();const d=all().find(k=>k.id===id),P=await analyze(d);
+ const imgs=await Promise.all(d.photos.map(s=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=s})));
+ A.innerHTML=`<div class="view"><div><canvas id="cv"></canvas><div class="row"><button id="pl">▶ Смотреть</button><button class="g" id="vo">🔊 Озвучить</button></div></div>
+ <div><div class="panel"><div class="mono">папка дня</div><h1>${P.title}</h1><p class="mono">${d.date} · ${P.style}</p>${P.pal.map(c=>`<span class="sw" style="background:${c}"></span>`).join('')}
+ <p><b>Почему так выглядит</b></p><ul>${P.why.map(w=>`<li>${w}</li>`).join('')}</ul><p>${d.text}</p>
+ <p class="mono">Песня: ${d.song.name||'—'} ${d.song.url?`· <a href="${d.song.url}" target="_blank" rel="noopener">открыть</a>`:''}</p>${d.song.type==='file'&&!files[d.id]?'<label>Подключить аудиофайл (не сохраняется в архиве)<input type="file" id="af" accept="audio/*"></label>':''}</div>
+ <div class="row"><button class="g" id="bk">← Архив</button><button class="g" id="ex">Экспорт JSON</button>${d.demo?'':'<button class="g" id="dl">Удалить</button>'}</div></div></div>`;
+ const cv=$('#cv'),draw=Player(cv,d,P,imgs);let t0=null,play=false;draw(1);
+ const tick=n=>{if(!t0)t0=n;draw((n-t0)/1000);raf=requestAnimationFrame(tick)};
+ $('#pl').onclick=()=>{play=!play;if(play){t0=null;raf=requestAnimationFrame(tick);$('#pl').textContent='❚❚ Пауза';const f=files[d.id];if(f){aud=new Audio(f);aud.loop=true;aud.play()}}else{stop();$('#pl').textContent='▶ Смотреть'}};
+ $('#vo').onclick=()=>{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(d.text);u.lang='ru-RU';u.rate=clamp(.8+P.ar*.5,.8,1.3);u.pitch=P.dom==='tense'||P.dom==='cold'?.85:P.dom==='warm'?1.1:1;speechSynthesis.speak(u)};
+ $('#bk').onclick=archive;$('#ex').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({folder:P.title,...d},null,1)],{type:'application/json'}));a.download=P.title+'.json';a.click()};
+ const dl=$('#dl');if(dl)dl.onclick=()=>{save(load().filter(k=>k.id!==id));archive()};
+ const af=$('#af');if(af)af.onchange=e=>{files[d.id]=URL.createObjectURL(e.target.files[0])}}
+function form(){stop();A.innerHTML=`<form class="panel" id="f"><h1>Новый день</h1>
+ <label>Дата</label><input type="date" id="dt" required><label>Как прошёл день?</label><textarea id="tx" rows="5" required placeholder="Опишите погоду, свет, людей, детали…"></textarea>
+ <label>Фото (одно или несколько)</label><input type="file" id="ph" accept="image/*" multiple required>
+ <label>Песня: ссылка на сервис (или файл ниже)</label><input id="ln" placeholder="https://…"><input type="file" id="sf" accept="audio/*" style="margin-top:6px">
+ <label>Название песни / исполнитель</label><input id="sn">
+ <label>Темп, уд/мин (для файла посчитается сам): <span id="tv">100</span></label><input type="range" id="tp" min="60" max="180" value="100" oninput="tv.textContent=value">
+ <label>Энергия песни</label><input type="range" id="en" min="0" max="100" value="50"><label>Лад</label><select id="md"><option value="0">Мажор</option><option value="1">Минор</option></select>
+ <div class="row"><button>Собрать воспоминание</button><button type="button" class="g" id="cn">Отмена</button></div><p class="mono" id="st"></p></form>`;
+ $('#dt').valueAsDate=new Date();$('#cn').onclick=archive;
+ $('#f').onsubmit=async e=>{e.preventDefault();$('#st').textContent='Анализирую…';
+  const photos=await Promise.all([...$('#ph').files].map(f=>new Promise(r=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas'),s=Math.min(1,540/i.width);c.width=i.width*s;c.height=i.height*s;c.getContext('2d').drawImage(i,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',.8))};i.src=URL.createObjectURL(f)})));
+  const sf=$('#sf').files[0];let tempo=+$('#tp').value,energy=$('#en').value/100;
+  if(sf){try{const a=await audioInfo(sf);tempo=a.tempo;energy=a.energy}catch(x){}}
+  const d={id:'u'+Date.now(),date:$('#dt').value,text:$('#tx').value,photos,song:{type:sf?'file':'link',url:$('#ln').value,name:$('#sn').value||(sf?sf.name:''),tempo,minor:$('#md').value==='1',energy}};
+  if(sf)files[d.id]=URL.createObjectURL(sf);save([...load(),d]);view(d.id)}}
+$('#nb').onclick=form;archive();
+</script></body></html>
